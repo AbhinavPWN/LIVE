@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Stream Video</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+</head>
+<body>
+    <h1>Webcam Streaming</h1>
+    <div id="videoContainer">
+        <video id="videoElement" autoplay></video>
+    </div>
+    <button id="startButton">Start</button>
+    <button id="stopButton">Stop</button>
+
+    <!-- New code for starting and stopping the stream -->
+    <button id="startStreamingButton">Start Streaming</button>
+    <button id="stopStreamingButton">Stop Streaming</button>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            let videoContainer = document.getElementById('videoContainer');
+            let startButton = document.getElementById('startButton');
+            let stopButton = document.getElementById('stopButton');
+
+            let videoStreams = [];
+            // let sessionID = '{{ session_id }}'; // Replace with your session ID logic
+            let csrfToken = '{{ csrf_token }}'; // Store the CSRF token in a JavaScript variable
+            let roomName = '{{ room_name }}'; // Replace with your room name
+            let sessionID = getCookie('stream_session_id_' + roomName); // Retrieve the session ID from the cookie
+             function getCookie(name) {
+                    let value = "; " + document.cookie;
+                    let parts = value.split("; " + name + "=");
+                    if (parts.length === 2) return parts.pop().split(";").shift();
+             }
+
+            let mediaRecorder;
+            let socket;
+            let frameBuffer = [];
+            let frameCounter = 0;
+            let mediaSource;
+
+            function setupWebSocket() {
+                    if (socket && (socket.readyState === WebSocket.CONNECTING || socket.readyState === WebSocket.OPEN)) {
+                        // Socket is already connecting or open, no need to reconnect
+                        return;
+                    }
+
+                    // Close the existing socket if it's open
+                    if (socket && socket.readyState === WebSocket.OPEN) {
+                        socket.close();
+                    }
+
+                    socket = new WebSocket('ws://' + window.location.host + '/ws/stream/' + roomName + '/');
+                    let videoElement = videoContainer.getElementsByTagName('video')[0];
+
+                    socket.onopen = function() {
+                        console.log('WebSocket connection established.');
+                        let data = {
+                            session_id: sessionID
+                        };
+                        socket.send(JSON.stringify(data));
+                    };
+
+                    socket.onmessage = function(event) {
+                        let frameData = JSON.parse(event.data);
+                        let receivedFrames = frameData.frames;
+
+                        // Update the video display with the received frame
+                        videoElement.src = URL.createObjectURL(receivedFrames[0]);
+                    };
+
+                    socket.onclose = function(event) {
+                        console.log('WebSocket connection closed.');
+                        // Handle WebSocket closure if needed
+                    };
+
+                    socket.onerror = function(event) {
+                        console.error('WebSocket error:', event);
+                        // Handle WebSocket errors if needed
+                    };
+                }
+
+
+            // function setupWebSocket() {
+            //     if (socket && (socket.readyState === WebSocket.CONNECTING || socket.readyState === WebSocket.OPEN)) {
+            //     // Socket is already connecting or open, no need to reconnect
+            //     return;
+            //     }
+            //
+            //     // Close the existing socket if it's open
+            //     if (socket && socket.readyState === WebSocket.OPEN) {
+            //         socket.close();
+            //     }
+            //
+            //     socket = new WebSocket('ws://' + window.location.host + '/ws/stream/' + roomName + '/');
+            //
+            //     socket.onopen = function() {
+            //         console.log('WebSocket connection established.');
+            //         let data = {
+            //             session_id: sessionID
+            //         };
+            //         socket.send(JSON.stringify(data));
+            //     };
+            //     socket.onmessage = function(event) {
+            //         // Process and display received video frames here
+            //         let frameData = JSON.parse(event.data);
+            //         let receivedFrames = frameData.frames;
+            //
+            //         // Process received frames and update the video display
+            //         // for (let i = 0; i < receivedFrames.length; i++) {
+            //         //     let videoElement = videoContainer.getElementsByTagName('video')[0];
+            //         //     videoElement.srcObject = URL.createObjectURL(receivedFrames[i]);
+            //         // }
+            //
+            //         // Initialize MediaSource if not already done
+            //           if (!mediaSource) {
+            //             mediaSource = new MediaSource();
+            //             let videoElement = videoContainer.getElementsByTagName('video')[0];
+            //             videoElement.src = URL.createObjectURL(mediaSource);
+            //             mediaSource.addEventListener('sourceopen', handleSourceOpen);
+            //           }
+            //
+            //           // Append received frames to the media source buffer
+            //           if (mediaSource.readyState === 'open') {
+            //             for (let i = 0; i < receivedFrames.length; i++) {
+            //               let frameBlob = new Blob([receivedFrames[i]], { type: 'video/webm' });
+            //               mediaRecorder.appendBuffer(frameBlob);
+            //             }
+            //           }
+            //     };
+            //
+            //     function handleSourceOpen(event) {
+            //       mediaRecorder = new MediaRecorder(mediaSource);
+            //       mediaRecorder.ondataavailable = handleDataAvailable;
+            //       mediaRecorder.start();
+            //     }
+            //
+            //     function handleDataAvailable(event) {
+            //       if (event.data.size > 0) {
+            //         mediaSource.addSourceBuffer('video/webm; codecs="vp8"').appendBuffer(event.data);
+            //       }
+            //     }
+            //
+            //     socket.onclose = function(event) {
+            //         console.log('WebSocket connection closed.');
+            //         // Handle WebSocket closure if needed
+            //     };
+            //     socket.onerror = function(event) {
+            //         console.error('WebSocket error:', event);
+            //         // Handle WebSocket errors if needed
+            //     };
+            // }
+
+            function startCapture() {
+                // Disable the "Start" button
+                startButton.disabled = true;
+
+                if (socket && (socket.readyState === WebSocket.CONNECTING || socket.readyState === WebSocket.OPEN)) {
+                // Socket is already connecting or open, no need to reconnect
+                return;
+                }
+
+                if (socket && socket.readyState === WebSocket.OPEN) {
+                    socket.close();
+                }
+
+                setupWebSocket();
+
+                // Construct the start_stream URL with the session ID
+                let startStreamURL = `/start_stream/${sessionID}/`;
+
+                // Make the XHR request to start the stream
+                $.ajax({
+                    url: startStreamURL,
+                    method: 'GET',
+                    success: function(response) {
+                        // Handle the success response, if needed
+                    },
+                    error: function(error) {
+                        // Handle the error response, if needed
+                    }
+                });
+
+                navigator.mediaDevices.getUserMedia({ video: true }).then(function(stream) {
+                    let videoElement = document.createElement('video');
+                    videoElement.autoplay = true;
+                    videoContainer.appendChild(videoElement);
+                    videoStreams.push(stream);
+
+
+
+                    mediaRecorder = new MediaRecorder(stream);
+                    mediaRecorder.ondataavailable = function(e) {
+                        frameBuffer.push(e.data);
+                        if (frameBuffer.length >= 5) { // Send frames in batches
+                            sendFrames();
+                        }
+                    };
+                    mediaRecorder.start(100); // Adjust the interval as needed
+                }).catch(function(error) {
+                    if (error.name === 'NotAllowedError') {
+                        console.error('Permission denied for accessing webcam.');
+                    } else {
+                        console.error('Error accessing webcam:', error);
+                    }
+                });
+
+                // Broadcast the session ID to other tabs
+                let broadcastChannel = new BroadcastChannel('video_stream_channel');
+                broadcastChannel.postMessage({ session_id: sessionID });
+
+            }
+
+            function sendFrames() {
+                console.log('WebSocket connection state:', socket.readyState);
+                if (!socket || socket.readyState !== WebSocket.OPEN) {
+                    console.log('WebSocket not open. Frames buffered.');
+                    return;
+                }
+
+                let frameData = {
+                    frame_counter: frameCounter,
+                    frames: frameBuffer
+                };
+
+                console.log('Sending frames...');
+                socket.send(JSON.stringify(frameData));
+
+                frameCounter++;
+                frameBuffer = []; // Clear the buffer
+            }
+
+            function stopCapture() {
+                mediaRecorder.stop();
+                videoStreams.forEach(function(stream) {
+                    stream.getTracks().forEach(function(track) {
+                        track.stop();
+                    });
+                });
+                socket.close();
+
+                // Additional cleanup and stopping logic as needed
+            }
+
+            startButton.addEventListener('click', function() {
+                startCapture();
+            });
+
+            stopButton.addEventListener('click', function() {
+                stopCapture();
+            });
+
+            // New event listeners for starting and stopping the stream
+            let startStreamingButton = document.getElementById('startStreamingButton');
+            let stopStreamingButton = document.getElementById('stopStreamingButton');
+
+            startStreamingButton.addEventListener('click', function() {
+                // Call the start_stream_view endpoint to initiate the stream
+                fetch(`/start_stream/${sessionID}/`)
+                    .then(response => response.json())
+                    .then(data => {
+                        console.log(data.message);
+                    })
+                    .catch(error => {
+                        console.error('Error starting stream:', error);
+                    });
+            });
+
+            stopStreamingButton.addEventListener('click', function() {
+                // Call the stop_stream_view endpoint to stop the stream
+                fetch(`/stop_stream/${sessionID}/`)
+                    .then(response => response.json())
+                    .then(data => {
+                        console.log(data.message);
+                    })
+                    .catch(error => {
+                        console.error('Error stopping stream:', error);
+                    });
+            });
+
+
+            // Listen for broadcast messages from other tabs
+            let broadcastChannel = new BroadcastChannel('video_stream_channel');
+            broadcastChannel.onmessage = function(event) {
+                if (event.data.session_id === sessionID) {
+                    startCapture();
+                }
+            };
+
+        });
+    </script>
+</body>
+</html>
